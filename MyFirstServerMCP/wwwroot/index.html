@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP SSE Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+        }
+        .panel {
+            flex: 1;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 15px;
+        }
+        .log {
+            height: 300px;
+            overflow-y: auto;
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        .input-group {
+            margin-bottom: 10px;
+        }
+        button {
+            padding: 8px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 8px;
+            margin-top: 5px;
+            box-sizing: border-box;
+        }
+        .message {
+            margin-bottom: 5px;
+            padding: 5px;
+            border-bottom: 1px solid #ddd;
+        }
+        .heartbeat {
+            color: #888;
+            font-style: italic;
+        }
+        .request {
+            color: #007bff;
+        }
+        .response {
+            color: #28a745;
+        }
+        .error {
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <h1>MCP SSE Client</h1>
+    <div class="container">
+        <div class="panel">
+            <h2>Tool Execution</h2>
+            <div class="input-group">
+                <label for="toolSelect">Select Tool:</label>
+                <select id="toolSelect">
+                    <option value="echoTool_Echo">Echo</option>
+                    <option value="echoTool_ReverseEcho">Reverse Echo</option>
+                    <option value="todoTool_GetTodos">Get Todos</option>
+                    <option value="todoTool_CreateTodo">Create Todo</option>
+                    <option value="itsmTool_GetAllIncidents">Get All Incidents</option>
+                    <option value="itsmTool_CreateIncident">Create Incident</option>
+                    <option value="weatherTool_GetWeather">Get Weather</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <label for="paramsInput">Parameters (JSON):</label>
+                <textarea id="paramsInput" rows="5">{"message": "Hello World"}</textarea>
+            </div>
+            <button id="executeBtn">Execute Tool</button>
+        </div>
+
+        <div class="panel">
+            <h2>Natural Language Query</h2>
+            <div class="input-group">
+                <label for="nlpInput">Ask in natural language:</label>
+                <textarea id="nlpInput" rows="5" placeholder="For example: Show me all my todo items"></textarea>
+            </div>
+            <button id="nlpExecuteBtn">Execute Query</button>
+        </div>
+
+        <div class="panel">
+            <h2>Log</h2>
+            <div id="log" class="log"></div>
+            <div class="input-group">
+                <label for="serverUrl">Server URL:</label>
+                <input type="text" id="serverUrl" value="http://localhost:5000/mcp">
+            </div>
+            <button id="connectBtn">Connect to SSE</button>
+            <button id="disconnectBtn" disabled>Disconnect</button>
+        </div>
+    </div>
+
+    <script>
+        let eventSource = null;
+        
+        document.getElementById('connectBtn').addEventListener('click', function() {
+            if (eventSource) {
+                eventSource.close();
+            }
+            
+            const serverUrl = document.getElementById('serverUrl').value;
+            const sseUrl = `${serverUrl}/sse`;
+            
+            try {
+                eventSource = new EventSource(sseUrl);
+                
+                eventSource.onopen = function() {
+                    log('Connected to SSE endpoint', 'info');
+                    document.getElementById('connectBtn').disabled = true;
+                    document.getElementById('disconnectBtn').disabled = false;
+                };
+                
+                eventSource.onmessage = function(event) {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'heartbeat') {
+                        log(`Heartbeat: ${data.timestamp}`, 'heartbeat');
+                    } else {
+                        log(`Message: ${event.data}`, 'message');
+                    }
+                };
+                
+                eventSource.onerror = function(error) {
+                    log(`Error: ${error.type}`, 'error');
+                    if (eventSource.readyState === EventSource.CLOSED) {
+                        document.getElementById('connectBtn').disabled = false;
+                        document.getElementById('disconnectBtn').disabled = true;
+                    }
+                };
+            } catch (err) {
+                log(`Failed to connect: ${err.message}`, 'error');
+            }
+        });
+        
+        document.getElementById('disconnectBtn').addEventListener('click', function() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+                log('Disconnected from SSE endpoint', 'info');
+                document.getElementById('connectBtn').disabled = false;
+                document.getElementById('disconnectBtn').disabled = true;
+            }
+        });
+        
+        document.getElementById('executeBtn').addEventListener('click', async function() {
+            const serverUrl = document.getElementById('serverUrl').value;
+            const toolName = document.getElementById('toolSelect').value;
+            let params;
+            
+            try {
+                params = JSON.parse(document.getElementById('paramsInput').value);
+            } catch (err) {
+                log(`Invalid JSON parameters: ${err.message}`, 'error');
+                return;
+            }
+            
+            const request = {
+                tool: toolName,
+                params: params
+            };
+            
+            log(`Request: ${JSON.stringify(request, null, 2)}`, 'request');
+            
+            try {
+                const response = await fetch(serverUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(request)
+                });
+                
+                const result = await response.json();
+                log(`Response: ${JSON.stringify(result, null, 2)}`, 'response');
+            } catch (err) {
+                log(`Error: ${err.message}`, 'error');
+            }
+        });
+
+        document.getElementById('nlpExecuteBtn').addEventListener('click', async function() {
+            const serverUrl = document.getElementById('serverUrl').value;
+            const nlpQuery = document.getElementById('nlpInput').value;
+
+            if (!nlpQuery.trim()) {
+                log('Natural language query cannot be empty', 'error');
+                return;
+            }
+
+            const request = {
+                Query: nlpQuery
+            };
+
+            log(`Natural Language Query: ${JSON.stringify(request, null, 2)}`, 'request');
+
+            try {
+                // Make sure we're using the correct URL format
+                let fullUrl = serverUrl;
+                if (!fullUrl.endsWith('/')) {
+                    fullUrl += '/';
+                }
+                fullUrl += 'nlp';
+                log(`Sending request to: ${fullUrl}`, 'info');
+                log(`Request body: ${JSON.stringify(request, null, 2)}`, 'info');
+                
+                const response = await fetch(fullUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(request)
+                });
+                
+                log(`Response status: ${response.status} ${response.statusText}`, 'info');
+                
+                const result = await response.json();
+                log(`Response: ${JSON.stringify(result, null, 2)}`, 'response');
+            } catch (err) {
+                log(`Error: ${err.message}`, 'error');
+            }
+        });
+        
+        function log(message, type) {
+            const logDiv = document.getElementById('log');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = message;
+            logDiv.appendChild(messageDiv);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        // Set up initial parameter templates for different tools
+        document.getElementById('toolSelect').addEventListener('change', function() {
+            const tool = this.value;
+            let params = {};
+            
+            switch(tool) {
+                case 'echoTool_Echo':
+                case 'echoTool_ReverseEcho':
+                    params = { message: "Hello World" };
+                    break;
+                case 'todoTool_CreateTodo':
+                    params = { title: "New task" };
+                    break;
+                case 'todoTool_GetTodo':
+                    params = { id: 1 };
+                    break;
+                case 'itsmTool_CreateIncident':
+                    params = { 
+                        title: "Server down", 
+                        description: "The production server is not responding", 
+                        priority: "High" 
+                    };
+                    break;
+                case 'itsmTool_GetIncident':
+                    params = { id: 1 };
+                    break;
+                case 'weatherTool_GetWeather':
+                    params = { location: "New York" };
+                    break;
+                default:
+                    params = {};
+            }
+            
+            document.getElementById('paramsInput').value = JSON.stringify(params, null, 2);
+        });
+    </script>
+</body>
+</html>
