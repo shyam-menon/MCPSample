@@ -63,9 +63,22 @@
         }
         .response {
             color: #28a745;
-        }
-        .error {
+        }        .error {
             color: #dc3545;
+        }
+        .small-btn {
+            padding: 4px 8px;
+            font-size: 0.9em;
+            background-color: #6c757d;
+        }
+        .small-btn:hover {
+            background-color: #5a6268;
+        }
+        .active-connection {
+            background-color: #28a745;
+        }
+        .active-connection:hover {
+            background-color: #218838;
         }
     </style>
 </head>
@@ -103,11 +116,18 @@
         </div>
 
         <div class="panel">
-            <h2>Log</h2>
-            <div id="log" class="log"></div>
+            <h2>Log</h2>            <div id="log" class="log"></div>
             <div class="input-group">
                 <label for="serverUrl">Server URL:</label>
                 <input type="text" id="serverUrl" value="http://localhost:5000/mcp">
+            </div>
+            <div class="input-group">
+                <label>Quick Connect:</label>
+                <div style="display: flex; gap: 10px; margin-top: 5px;">
+                    <button id="localBtn" class="small-btn active-connection">Local</button>
+                    <button id="dockerBtn" class="small-btn">Docker</button>
+                    <button id="customBtn" class="small-btn">Custom</button>
+                </div>
             </div>
             <button id="connectBtn">Connect to SSE</button>
             <button id="disconnectBtn" disabled>Disconnect</button>
@@ -163,9 +183,44 @@
                 document.getElementById('connectBtn').disabled = false;
                 document.getElementById('disconnectBtn').disabled = true;
             }
+        });        // Add quick connect button handlers
+        document.getElementById('localBtn').addEventListener('click', function() {
+            document.getElementById('serverUrl').value = 'http://localhost:5000/mcp';
+            highlightActiveButton(this);
+        });
+          document.getElementById('dockerBtn').addEventListener('click', function() {
+            // Using window.location.hostname ensures it works when accessed from different devices
+            const hostname = window.location.hostname === 'localhost' ? 'localhost' : window.location.hostname;
+            document.getElementById('serverUrl').value = `http://${hostname}:5001/mcp`;
+            highlightActiveButton(this);
         });
         
-        document.getElementById('executeBtn').addEventListener('click', async function() {
+        document.getElementById('customBtn').addEventListener('click', function() {
+            const url = prompt('Enter custom MCP server URL:', document.getElementById('serverUrl').value);
+            if (url) {
+                document.getElementById('serverUrl').value = url;
+                highlightActiveButton(this);
+            }
+        });
+        
+        function highlightActiveButton(activeBtn) {
+            // Remove highlight from all buttons
+            document.querySelectorAll('.small-btn').forEach(btn => {
+                btn.classList.remove('active-connection');
+            });
+            
+            // Add highlight to the active button
+            activeBtn.classList.add('active-connection');
+        }        // Initialize the active button
+        window.addEventListener('DOMContentLoaded', function() {
+            const serverUrl = document.getElementById('serverUrl').value;
+            if (serverUrl.includes('localhost:5000')) {
+                document.getElementById('localBtn').classList.add('active-connection');
+            } else if (serverUrl.includes(':5001')) {
+                document.getElementById('dockerBtn').classList.add('active-connection');
+            }
+        });
+          document.getElementById('executeBtn').addEventListener('click', async function() {
             const serverUrl = document.getElementById('serverUrl').value;
             const toolName = document.getElementById('toolSelect').value;
             let params;

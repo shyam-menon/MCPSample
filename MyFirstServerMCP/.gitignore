@@ -1,0 +1,18 @@
+# .NET build artifacts
+bin/
+obj/
+out/
+
+# IDE files
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Environment variables containing secrets
+.env
+
+# Docker artifacts
+*.env
+*.env.*
+!.env.template

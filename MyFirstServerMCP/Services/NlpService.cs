@@ -5,6 +5,9 @@ using Microsoft.SemanticKernel.Connectors.OpenAI;
 using Azure.AI.OpenAI;
 using Azure;
 using MyFirstServerMCP.Models;
+using MyFirstServerMCP.Diagnostics;
+using System.Net.Http;
+using Azure.Core.Pipeline;
 
 namespace MyFirstServerMCP.Services;
 
@@ -24,6 +27,18 @@ public class NlpService
         var apiKey = Environment.GetEnvironmentVariable("AZURE_API_KEY");
         var endpoint = Environment.GetEnvironmentVariable("AZURE_ENDPOINT");
         var deploymentName = Environment.GetEnvironmentVariable("AZURE_DEPLOYMENT_NAME") ?? "GPT-4o";
+        
+        // Handle edge cases with the Azure endpoint URL
+        if (!string.IsNullOrEmpty(endpoint))
+        {
+            // Make sure the endpoint is properly formatted as a valid URI
+            if (!endpoint.StartsWith("http://") && !endpoint.StartsWith("https://"))
+            {
+                // Default to https if protocol not specified
+                endpoint = "https://" + endpoint;
+                _logger.LogInformation("Added https:// prefix to endpoint: {Endpoint}", endpoint);
+            }
+        }
         
         // Debug: Log the actual values (mask the API key for security)
         string maskedKey = !string.IsNullOrEmpty(apiKey) ? $"{apiKey.Substring(0, 4)}...{apiKey.Substring(apiKey.Length - 4)}" : "<not set>";
@@ -50,17 +65,28 @@ public class NlpService
                 
                 _logger.LogInformation("Initializing Azure OpenAI with deployment: {DeploymentName}", deploymentName);
                 
-                // Use the same approach as the working console app
-                _logger.LogInformation("Using simplified Azure OpenAI configuration");
+                // Create a custom HttpClient that bypasses SSL certificate validation
+                var httpClient = CertificateValidator.GetInsecureHttpClient();
                 
-                // Add Azure OpenAI chat completion service with explicit deployment name in both parameters
-                builder.AddAzureOpenAIChatCompletion(
-                    deploymentName,  // First parameter: deployment name
-                    endpoint,        // Second parameter: endpoint
-                    apiKey,          // Third parameter: API key
-                    deploymentName); // Fourth parameter: model ID (same as deployment name)
+                // Create custom OpenAI client options with the insecure HttpClient
+                var clientOptions = new OpenAIClientOptions()
+                {
+                    Transport = new HttpClientTransport(httpClient)
+                };
                 
-                _logger.LogInformation("Successfully configured chat completion service");
+                _logger.LogInformation("Using custom HTTP client with certificate validation bypass");
+                
+                // Create the Azure OpenAI client with our custom options
+                var openAIClient = new OpenAIClient(
+                    new Uri(endpoint),
+                    new AzureKeyCredential(apiKey),
+                    clientOptions);
+                
+                // Add Azure OpenAI chat completion using our custom client
+                builder.Services.AddKeyedSingleton("AzureOpenAI", openAIClient);
+                builder.AddAzureOpenAIChatCompletion(deploymentName, openAIClient);
+                
+                _logger.LogInformation("Successfully configured chat completion service with certificate validation bypass");
                 
                 _kernel = builder.Build();
                 
@@ -143,7 +169,16 @@ public class NlpService
             catch (HttpRequestException httpEx)
             {
                 _logger.LogError(httpEx, "HTTP error connecting to Azure OpenAI");
-                return new { error = $"Could not connect to Azure OpenAI service: {httpEx.Message}. Please check your network connection and endpoint configuration." };
+                var innerException = httpEx.InnerException;
+                _logger.LogError("Inner Exception: {InnerExceptionMessage}", innerException?.Message);
+                
+                if (innerException is System.Security.Authentication.AuthenticationException authEx)
+                {
+                    _logger.LogError("SSL/TLS Authentication Error: {AuthMessage}", authEx.Message);
+                    _logger.LogError("This is likely a certificate validation issue. Check if the certificate validation bypass is working properly.");
+                }
+                
+                return new { error = $"Could not connect to Azure OpenAI service: {httpEx.Message}. Inner exception: {innerException?.Message}. Please check your network connection and endpoint configuration." };
             }
         }
         catch (Exception ex)

@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  mcpserver:
+    build: .
+    ports:
+      - "5001:5001"
+    env_file:
+      - .env
+    environment:
+      - ASPNETCORE_URLS=http://+:5001
+      - DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0
+      - DOTNET_SSL_ENABLE_SERVER_CERTIFICATE_VALIDATION=false
+    restart: unless-stopped
